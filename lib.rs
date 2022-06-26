@@ -20,8 +20,8 @@ pub enum RCError {
 pub trait RmrkExt {
     type ErrorCode = RCErrorCode;
 
-    #[ink(extension = 1201)]
-    fn read_nft(nft_id: u32) -> Result<AccountId, RCError>;
+    #[ink(extension = 1201, returns_result = false)]
+    fn read_nft(caller_id: AccountId, collection_id: u32, nft_id: u32) -> bool;
 }
 
 impl From<RCErrorCode> for RCError {
@@ -76,8 +76,9 @@ mod rmrk_extension {
 
         /// Calls current_era() in the pallet-dapps-staking
         #[ink(message)]
-        pub fn read_nft(&self, nft_id: u32) -> Result<AccountId, RCError> {
-            self.env().extension().read_nft(nft_id)
+        pub fn read_nft(&self, collection_id: u32, nft_id: u32) -> bool {
+            let caller = self.env().caller();
+            self.env().extension().read_nft(caller.clone(), collection_id, nft_id).map_err(|_| false).unwrap()
         }
     }
 }
