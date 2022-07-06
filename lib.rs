@@ -24,11 +24,11 @@ pub trait RmrkExt {
     #[ink(extension = 1, returns_result = false)]
     fn read_nft(caller_id: AccountId, collection_id: CollectionId, nft_id: NftId) -> bool;
 
-    #[ink(extension = 2, returns_result = false)]
-    fn mint_nft(contract_address: AccountId, owner: AccountId, collection_id: CollectionId) -> NftId;
+    #[ink(extension = 2)]
+    fn mint_nft(contract_address: AccountId, owner: AccountId, collection_id: CollectionId) -> Result<NftId, RCError>;
 
-    #[ink(extension = 3, returns_result = false)]
-    fn create_collection(contract_address: AccountId) -> NftId;
+    #[ink(extension = 3)]
+    fn create_collection(contract_address: AccountId) -> Result<CollectionId, RCError>;
 }
 
 impl From<RCErrorCode> for RCError {
@@ -71,30 +71,32 @@ impl Environment for CustomEnvironment {
 
 #[ink::contract(env = crate::CustomEnvironment)]
 mod rmrk_extension {
+    use super::{RCError};
+
     use ink_prelude::vec::Vec;
     #[ink(storage)]
     pub struct RmrkExtension {}
 
     impl RmrkExtension {
-        #[ink(constructor)]
+        #[ink(constructor, payable)]
         pub fn new() -> Self { Self {} }
 
 
         #[ink(message)]
         pub fn read_nft(&self, collection_id: u32, nft_id: u32) -> bool {
             let caller = self.env().caller();
-            self.env().extension().read_nft(caller.clone(), collection_id, nft_id).map_err(|_| false).unwrap()
+            self.env().extension().read_nft(caller, collection_id, nft_id).map_err(|_| false).unwrap()
         }
 
         #[ink(message)]
-        pub fn mint_nft(&self, collection_id: u32, _metadata: Vec<u8>) -> u32 {
+        pub fn mint_nft(&mut self, collection_id: u32, _metadata: Vec<u8>) -> Result<u32, RCError> {
             let caller = self.env().caller();
-            self.env().extension().mint_nft(self.env().account_id(), caller.clone(), collection_id).map_err(|_| 200).unwrap()
+            self.env().extension().mint_nft(self.env().account_id(), caller, collection_id)
         }
 
         #[ink(message)]
-        pub fn create_collection(&self, _metadata: Vec<u8>, _symbol: Vec<u8>) -> u32 {
-            self.env().extension().create_collection(self.env().account_id()).map_err(|_| 200).unwrap()
+        pub fn create_collection(&mut self, _metadata: Vec<u8>, _symbol: Vec<u8>) -> Result<u32, RCError> {
+            self.env().extension().create_collection(self.env().account_id())
         }
     }
 }
