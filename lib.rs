@@ -9,7 +9,7 @@ use ink_prelude::vec::Vec;
 pub enum RCErrorCode {
     Failed,
     CollectionNotCreated,
-    CollectionAlreadyCreated
+    CollectionAlreadyCreated,
 }
 
 #[derive(scale::Encode, scale::Decode, Debug)]
@@ -20,6 +20,7 @@ pub enum RCError {
 
 type CollectionId = u32;
 type NftId = u32;
+type ResourceId = u32;
 #[ink::chain_extension]
 pub trait RmrkExt {
     type ErrorCode = RCErrorCode;
@@ -27,16 +28,36 @@ pub trait RmrkExt {
     #[ink(extension = 1, returns_result = false)]
     fn read_nft(caller_id: AccountId, collection_id: CollectionId, nft_id: NftId) -> bool;
 
-    #[ink(extension = 2)]
+    #[ink(extension = 2, returns_result = false)]
     fn mint_nft(
         contract_address: AccountId,
         owner: AccountId,
         collection_id: CollectionId,
-        metadata: Vec<u8>
-    ) -> Result<NftId, RCError>;
+        metadata: Vec<u8>,
+    ) -> Option<NftId>;
 
-    #[ink(extension = 3)]
-    fn create_collection(contract_address: AccountId, metadata: Vec<u8>, symbol: Vec<u8>) -> Result<CollectionId, RCError>;
+    #[ink(extension = 3, returns_result = false)]
+    fn create_collection(
+        contract_address: AccountId,
+        metadata: Vec<u8>,
+        symbol: Vec<u8>,
+    ) -> Option<CollectionId>;
+
+    #[ink(extension = 4, returns_result = false)]
+    fn add_resource(
+        contract_address: AccountId,
+        collection_id: CollectionId,
+        nft_id: NftId,
+        metadata: Vec<u8>,
+    ) -> Option<ResourceId>;
+
+    #[ink(extension = 5, returns_result = false)]
+    fn remove_resource(
+        contract_address: AccountId,
+        collection_id: CollectionId,
+        nft_id: NftId,
+        resource_id: ResourceId,
+    );
 }
 
 impl From<RCErrorCode> for RCError {
@@ -111,40 +132,106 @@ mod rmrk_extension {
 
         #[ink(message)]
         pub fn read_nft_id(&self) -> Option<u32> {
-            self.collection_id  
+            self.collection_id
         }
 
         #[ink(message, payable)]
-        pub fn mint_nft(&mut self, metadata: ink_prelude::string::String) -> Result<u32, RCError> {
+        pub fn mint_nft(&mut self, metadata: ink_prelude::string::String) -> Result<(), RCError> {
             if self.collection_id == None {
-                return Err(RCError::ErrorCode(RCErrorCode::CollectionNotCreated))
+                return Err(RCError::ErrorCode(RCErrorCode::CollectionNotCreated));
             }
+
             let caller = self.env().caller();
-            self.env()
-                .extension()
-                .mint_nft(self.env().account_id(), caller, self.collection_id.unwrap(), metadata.into_bytes())
+
+            let result = self.env().extension().mint_nft(
+                self.env().account_id(),
+                caller,
+                self.collection_id.unwrap(),
+                metadata.into_bytes(),
+            );
+
+            if result.is_err() || result.unwrap().is_none() {
+                return Err(RCError::ErrorCode(RCErrorCode::Failed));
+            }
+
+            Ok(())
         }
 
-        #[ink(message, payable)]
+        #[ink(message)]
         pub fn create_collection(
             &mut self,
             metadata: ink_prelude::string::String,
             symbol: ink_prelude::string::String,
-        ) -> Result<u32, RCError> {
+        ) -> Result<(), RCError> {
             if self.collection_id != None {
-                return Err(RCError::ErrorCode(RCErrorCode::CollectionAlreadyCreated))
+                return Err(RCError::ErrorCode(RCErrorCode::CollectionAlreadyCreated));
             }
 
-            let result: Result<u32, RCError> = self.env()
-                .extension()
-                .create_collection(self.env().account_id(), metadata.into_bytes(), symbol.into_bytes());
+            let result = self.env().extension().create_collection(
+                self.env().account_id(),
+                metadata.into_bytes(),
+                symbol.into_bytes(),
+            );
 
-            match result {
-                Ok(cid) => self.collection_id = Some(cid),
-                Err(_) => ()
+            if result.is_err() {
+                return Err(RCError::ErrorCode(RCErrorCode::Failed));
+            }
+            let collection_id = result.unwrap();
+
+            match collection_id {
+                Some(cid) => self.collection_id = Some(cid),
+                None => return Err(RCError::ErrorCode(RCErrorCode::Failed)),
             }
 
-            return result
+            Ok(())
+        }
+
+        #[ink(message)]
+        pub fn add_resource(
+            &mut self,
+            nft_id: u32,
+            metadata: ink_prelude::string::String,
+        ) -> Result<(), RCError> {
+            if self.collection_id == None {
+                return Err(RCError::ErrorCode(RCErrorCode::CollectionNotCreated));
+            }
+
+            let result = self.env().extension().add_resource(
+                self.env().account_id(),
+                self.collection_id.unwrap(),
+                nft_id,
+                metadata.into_bytes(),
+            );
+
+            if result.is_err() || result.unwrap().is_none() {
+                return Err(RCError::ErrorCode(RCErrorCode::Failed));
+            }
+
+            Ok(())
+        }
+
+        #[ink(message)]
+        pub fn remove_resource(
+            &mut self,
+            nft_id: u32,
+            resource_id: u32,
+        ) -> Result<(), RCError> {
+            if self.collection_id == None {
+                return Err(RCError::ErrorCode(RCErrorCode::CollectionNotCreated));
+            }
+
+            let result = self.env().extension().remove_resource(
+                self.env().account_id(),
+                self.collection_id.unwrap(),
+                nft_id,
+                resource_id,
+            );
+
+            if result.is_err() {
+                return Err(RCError::ErrorCode(RCErrorCode::Failed));
+            }
+
+            Ok(())
         }
     }
 }
